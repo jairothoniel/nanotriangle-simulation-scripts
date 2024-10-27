@@ -1,4 +1,4 @@
-k#!/bin/bash
+#!/bin/bash
 
 # --- Introduction ---
 # This script generates the necessary file structure, including POSCAR, INCAR, KPOINTS, POTCAR, and run.sh files,
@@ -86,5 +86,52 @@ mpirun -np \$LSB_DJOB_NUMPROC \$EXEC < INCAR > INCAR.out
 EOF
         chmod +x "$subdir/run.sh"
 
- 
+        # Create INCAR file with computational parameters, setting a placeholder for MAGMOM to be updated later.
+        cat > "$subdir/INCAR" <<EOF
+SYSTEM=${mater}${folder}$i
+PREC=Normal
+ALGO=Fast
+ISMEAR=0
+ENCUT=500
+ISIF=2
+NSW=2000
+IBRION=1
+IVDW=11 
+EDIFF=1E-4
+EDIFFG=-0.01
+ICHARG=2
+ISTART=0
+SIGMA=0.2
+ISPIN=2
+MAGMOM=NUMATOM*0
+NELM=600
+LREAL=Auto
+NPAR=4
+LWAVE=.FALSE.
+EOF
 
+        # Create POTCAR file by concatenating pseudopotentials for each element (M, X, Y if applicable).
+        cat "/tmpu/jong_g/jong/apps/vasp/pseudo/PBE_paw/$m/POTCAR" > "$subdir/POTCAR"
+        cat "/tmpu/jong_g/jong/apps/vasp/pseudo/PBE_paw/$x/POTCAR" >> "$subdir/POTCAR"
+        if [ -n "$y" ]; then
+            cat "/tmpu/jong_g/jong/apps/vasp/pseudo/PBE_paw/$y/POTCAR" >> "$subdir/POTCAR"
+        fi
+
+        # --- Step 4: Update MAGMOM in INCAR Based on Atom Counts from POSCAR ---
+        # To correctly configure the magnetic moment (MAGMOM) settings in INCAR, the script reads atom counts from POSCAR.
+        # It calculates the total atom count on line 7 of POSCAR and replaces the placeholder "NUMATOM*0" in INCAR.
+        atom_counts=$(sed -n '7p' "$subdir/POSCAR" | awk '{for(i=1; i<=NF; i++) printf "%s*0 ", $i}')
+        if [[ -n "$atom_counts" ]]; then
+            sed -i "s|NUMATOM\*0|$atom_counts|" "$subdir/INCAR"
+            echo "MAGMOM updated in $subdir/INCAR with atom counts: $atom_counts"
+        else
+            echo "Warning: Could not determine atom counts for MAGMOM in $subdir"
+        fi
+
+        cd ..  # Return to the main folder level for the next numbered folder.
+    done
+    cd ..  # Return to the base level to process the next 'a' or 'b' folder.
+done
+
+# Final message indicating the completion of the script's operations.
+echo "Script completed. File structure and configuration generated in $base_path for system $mater."
